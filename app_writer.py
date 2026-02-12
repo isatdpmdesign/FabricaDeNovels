@@ -1,5 +1,4 @@
 import streamlit as st
-import os
 import io
 import zipfile
 from google import genai
@@ -7,81 +6,93 @@ from google.genai import types
 from supabase import create_client, Client
 
 # --- CONFIGURAÇÃO ---
-st.set_page_config(page_title="Fábrica 22.0 - Processador", layout="wide", page_icon="⚙️")
-st.title("⚙️ Fábrica 22.0 - Processador de Roteiro")
-st.markdown("*Transforme seu roteiro em Legendas, Prompts Flux (Imagens) e Prompts Grok (Animação).*")
+st.set_page_config(page_title="Fábrica 23.0 - Sequencial", layout="wide", page_icon="🧬")
+st.title("🧬 Fábrica 23.0 - Gerador Evolutivo de Histórias")
+st.markdown("*Crie sua história parte por parte com automação total de prompts.*")
 
 # --- CONEXÃO SEGURA ---
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
     supa_url = st.secrets["supabase"]["url"]
     supa_key = st.secrets["supabase"]["key"]
-    
     client_gemini = genai.Client(api_key=api_key)
     supabase: Client = create_client(supa_url, supa_key)
 except Exception as e:
-    st.error("Erro nas chaves! Verifique os Secrets do Streamlit.")
+    st.error("Erro nas chaves! Verifique os Secrets.")
     st.stop()
 
+# --- ESTADO DA SESSÃO (MEMÓRIA TEMPORÁRIA) ---
+if 'historia_partes' not in st.session_state:
+    st.session_state['historia_partes'] = []
+if 'contexto_acumulado' not in st.session_state:
+    st.session_state['contexto_acumulado'] = ""
+
 # --- INTERFACE ---
-st.header("📽️ Iniciar Processamento")
+with st.sidebar:
+    st.header("🎬 O Plot")
+    ideia_geral = st.text_area("Ideia Geral (Início, Meio e Fim):", height=150)
+    dna_visual = st.text_area("🧬 DNA Visual:", placeholder="Descrição dos personagens para os prompts...")
+    
+    if st.button("🗑️ Resetar História"):
+        st.session_state['historia_partes'] = []
+        st.session_state['contexto_acumulado'] = ""
+        st.rerun()
 
-col_info, col_input = st.columns([1, 2])
+# --- FLUXO DE GERAÇÃO ---
+st.header("🚀 Linha de Produção")
 
-with col_info:
-    st.info("""
-    **Como funciona:**
-    1. Cole seu roteiro completo ao lado.
-    2. Defina o DNA Visual dos personagens.
-    3. Clique em 'Processar' para fatiar em cenas de 6s.
-    """)
-    dna_personagens = st.text_area("🧬 DNA Visual (Ficha dos Personagens):", height=200, placeholder="Ex: Julian é loiro, olhos azuis, veste terno vitoriano. Ayla tem cabelos ruivos longos...")
-
-with col_input:
-    roteiro_colado = st.text_area("✒️ Cole seu Roteiro aqui:", height=300, placeholder="Cole aqui o texto que você já escreveu...")
-
-if st.button("🚀 Processar e Gerar Prompts"):
-    if not roteiro_colado:
-        st.warning("O roteiro está vazio!")
-    else:
-        with st.spinner("Desmembrando roteiro e criando engenharia de prompts..."):
+if not ideia_geral:
+    st.info("👈 Comece descrevendo sua ideia geral na barra lateral.")
+else:
+    # Botão para gerar a PRÓXIMA parte
+    num_parte = len(st.session_state['historia_partes']) + 1
+    
+    if st.button(f"✨ Gerar Parte {num_parte}"):
+        with st.spinner(f"Escrevendo e processando a Parte {num_parte}..."):
             
-            # PROMPT TÉCNICO
-            prompt_tecnico = f"""
-            VOCÊ É UM ASSISTENTE DE PRODUÇÃO CINEMATOGRÁFICA.
-            Sua tarefa é pegar o roteiro abaixo e transformá-lo em um kit de produção.
-
-            REGRAS:
-            1. Divida o texto em cenas curtas (cada legenda deve ter no máximo 15 palavras).
-            2. Para CADA CENA, gere DOIS prompts de imagem diferentes para o FLUX (para variação).
-            3. Para CADA CENA, gere UM prompt de animação para o GROK (focado em movimento de 6 segundos).
-
-            CONTEXTO VISUAL (DNA): {dna_personagens}
-            ROTEIRO: "{roteiro_colado}"
-
+            # PROMPT EVOLUTIVO
+            prompt_evolutivo = f"""
+            VOCÊ É UM ESCRITOR E DIRETOR.
+            ESTA É A IDEIA GERAL: {ideia_geral}
+            ESTE É O CONTEXTO DO QUE JÁ FOI ESCRITO: {st.session_state['contexto_acumulado']}
+            
+            SUA TAREFA:
+            1. Escreva a PARTE {num_parte} da história. Ela deve ser focada em romance e drama, preparando o terreno para o que vem depois.
+            2. Pegue essa Parte {num_parte} e transforme em um kit de produção:
+               - Divida em cenas (legendas de no máximo 15 palavras).
+               - Para cada cena: 2 Prompts Flux (Inglês) + 1 Prompt Grok (Movimento em Inglês).
+            
+            DNA VISUAL: {dna_visual}
+            
             FORMATO DE SAÍDA:
-            [CENA X]
-            Legenda: "Texto da narração"
-            Flux Prompt 1: "Descrição visual detalhada em inglês"
-            Flux Prompt 2: "Descrição visual alternativa em inglês"
-            Grok Prompt: "Instrução de movimento em inglês para 6 segundos"
-            ---
+            [TEXTO NARRATIVO DA PARTE {num_parte}]
+            (Escreva aqui o texto da história em parágrafos)
+
+            [KIT DE PRODUÇÃO]
+            Cena 1 | Legenda: "..." | Flux 1: "..." | Flux 2: "..." | Grok: "..."
+            Cena 2 | Legenda: "..." | Flux 1: "..." | Flux 2: "..." | Grok: "..."
             """
             
-            try:
-                response = client_gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt_tecnico)
-                resultado_texto = response.text
-                
-                st.divider()
-                st.subheader("✅ Kit de Produção Gerado")
-                st.text_area("Resultado (Pronto para copiar):", value=resultado_texto, height=500)
-                
-                # ZIP para baixar
-                zip_buffer = io.BytesIO()
-                with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zf:
-                    zf.writestr("kit_producao_completo.txt", resultado_texto)
-                
-                st.download_button("📦 Baixar Kit (.txt)", zip_buffer.getvalue(), "kit_producao.zip")
-                
-            except Exception as e:
-                st.error(f"Erro no processamento da IA: {e}")
+            response = client_gemini.models.generate_content(model="gemini-2.0-flash", contents=prompt_evolutivo)
+            output = response.text
+            
+            # Adiciona ao histórico
+            st.session_state['historia_partes'].append(output)
+            st.session_state['contexto_acumulado'] += f"\n\nPARTE {num_parte}:\n{output}"
+
+    # EXIBIÇÃO DAS PARTES GERADAS
+    for i, conteudo in enumerate(st.session_state['historia_partes']):
+        with st.expander(f"📦 CONTEÚDO DA PARTE {i+1}", expanded=True):
+            st.markdown(conteudo)
+            
+            # Botão de Download para esta parte específica
+            st.download_button(
+                label=f"📥 Baixar Kit Parte {i+1}",
+                data=conteudo,
+                file_name=f"parte_{i+1}_producao.txt",
+                key=f"btn_{i}"
+            )
+
+if st.session_state['historia_partes']:
+    st.divider()
+    st.success(f"✅ {len(st.session_state['historia_partes'])} partes prontas para produção!")
